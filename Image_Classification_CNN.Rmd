@@ -1,0 +1,695 @@
+---
+title: "Image Classification with Convulotional Neural Network using Keras API"
+author: "By : Syabaruddin Malik"
+output:
+  html_document:
+    df_print: paged
+    highlight: zenburn
+    theme: flatly
+    toc: true
+    toc_float:
+      collapsed: no
+    number_sections : True
+
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  fig.align = "center",
+  comment = "#>")
+options(scipen = 9999)
+
+```
+
+# Introduction
+
+Hello Everyone! It is time for another project in Algoritma Data Science Program. In this project, we are going to do image classification/recognition using Convulotional Neural Network that will classify whether the submitted image is a beach, a forest, or a mountain.
+
+![](C:\SyabaruddinFolder\Work\Algoritma\DATAScicourse\NeuralNetwork\CapstoneProject\beach.jpg)
+
+A Convolutional Neural Network, also known as CNN or ConvNet, is a class of neural networks that specializes in processing data that has a grid-like topology, such as an image. A digital image is a binary representation of visual data. It contains a series of pixels arranged in a grid-like fashion that contains pixel values to denote how bright and what color each pixel should be.
+
+![](C:\SyabaruddinFolder\Work\Algoritma\DATAScicourse\NeuralNetwork\CapstoneProject\cnn.png)
+
+The human brain processes a huge amount of information the second we see an image. Each neuron works in its own receptive field and is connected to other neurons in a way that they cover the entire visual field. Just as each neuron responds to stimuli only in the restricted region of the visual field called the receptive field in the biological vision system, each neuron in a CNN processes data only in its receptive field as well. The layers are arranged in such a way so that they detect simpler patterns first (lines, curves, etc.) and more complex patterns (faces, objects, etc.) further along. By using a CNN, one can enable sight to computers.
+
+# Load the Library
+
+Before we do the analysis, we need to install and load the required library.
+
+```{r}
+# Data wrangling
+library(tidyverse)
+
+# Image manipulation
+library(imager)
+
+# Deep learning
+library(keras)
+
+# Model Evaluation
+library(caret)
+
+options(scipen = 999)
+```
+
+# Exploratory Data Analysis
+
+## Load the Data for Train And Validation
+
+Before we build the model, we need to explore the data first. It is a common practice in Image classification task to put each image on separate folders based on the target labels or class. 
+
+For this project, we put in 3 separate folders (Beach, Mountain, Forest) for our train data.
+
+![](C:\SyabaruddinFolder\Work\Algoritma\DATAScicourse\NeuralNetwork\CapstoneProject\folder.PNG)
+
+If you open the beach folder, you can see that we have no table or any kind of structured data format, we only have the image for the beach. We will directly extract information from the images instead of using a structured dataset.
+
+![](C:\SyabaruddinFolder\Work\Algoritma\DATAScicourse\NeuralNetwork\CapstoneProject\pic.PNG)
+
+Let’s try to get the file name of each image. First, we need to locate the folder of each target class. The following code will give you the folder name inside the train folder.
+
+```{r}
+folder_list <- list.files("data/train/")
+
+folder_list
+```
+
+We combine the folder name with the path or directory of the train folder in order to access the content inside each folder.
+
+```{r}
+folder_path <- paste0("data/train/", folder_list, "/")
+
+folder_path
+```
+We will use the map() function to loop or iterate and collect the file name for each folder (beach, forest, mountain). The map() will return a list so if we want to combine the file name from 3 different folders we simply use the unlist() function.
+
+```{r}
+# Get file name
+file_name <- map(folder_path, 
+                 function(x) paste0(x, list.files(x))
+                 ) %>% 
+  unlist()
+
+# first 6 file name
+head(file_name)
+```
+You can also check the last 6 images.
+
+```{r}
+# last 6 file name
+tail(file_name)
+```
+Now let’s check how many images we have.
+
+```{r}
+length(file_name)
+```
+To check the content of the file, we can use the load.image() function from the imager package. For example, let’s randomly visualize 6 images from the data.
+
+```{r}
+# Randomly select image
+set.seed(123)
+sample_image <- sample(file_name, 6)
+
+# Load image into R
+img <- map(sample_image, load.image)
+
+# Plot image
+par(mfrow = c(2, 3)) # Create 2 x 3 image grid
+map(img, plot)
+```
+### Check Image Dimension
+
+Understanding the dimension of the input/submitted images is one of the most important aspects in image classification. 
+
+We need to know the distribution of the image dimension to create a proper input dimension for building the deep learning model. Let’s check the properties of the first image.
+
+```{r}
+# Full Image Description
+img <- load.image(file_name[1])
+img
+```
+If we look at result above, we can get the information about the dimension of the image. The height and width represent the height and width of the image in pixels. The color channel represent if the color is in grayscale format (color channels = 1) or is in RGB format (color channels = 3). 
+
+To get the value of each dimension, we can use the dim() function. It will return the height, width, depth, and the channels.
+
+```{r}
+# Image Dimension
+dim(img)
+```
+Now we have already successfully insert an image and get the image dimension information. Now let's create a function that will automatically get the height and width of an image and convert it into a dataframe
+
+```{r}
+# Function for acquiring width and height of an image
+get_dim <- function(x){
+  img <- load.image(x) 
+  
+  df_img <- data.frame(height = height(img),
+                       width = width(img),
+                       filename = x
+                       )
+  
+  return(df_img)
+}
+
+get_dim(file_name[1])
+```
+Now let's check all 1328 images from the file name and get the height and width of the image.
+
+
+```{r}
+# Randomly get 1328 sample images
+set.seed(123)
+sample_file <- sample(file_name)
+
+# Run the get_dim() function for each image
+file_dim <- map_df(sample_file, get_dim)
+
+head(file_dim, 10)
+```
+
+Now let's do the summary and get the basic stats description for the image dimensions.
+
+```{r}
+summary(file_dim)
+```
+Points that we can get from above summary data :
+
++ Our image data has a great variation in the dimension
++ The minimum height is 94 pixels while the maximum height is 314 pixels
++ The minimum width is 100 pixels while the maximum width is up to 534 pixels
+
+We should concern about the dimension of the image data. Understanding the dimension of the image will help us on the next part of the process: data preprocessing. During data-preprocessing we have to make sure that all the images that inserted to build/train the model must have the same dimensions. 
+
+The dimensions that we determine must not too small to avoid any lost data information although the training time will be faster. The dimensions must not also too big to avoid very slow training time altough we will get more information. We have to find the balance.
+
+## Load the Data for Test (Prediction)
+
+The process is the same as load the Data for Train and Validation. The difference is the data path/directory forTest Data
+
+```{r}
+folder_list_test <- list.files("data/test/")
+folder_path_test <- paste0("data/test/", folder_list_test, "/")
+# Get file name
+file_name_test <- map(folder_path_test, 
+                 function(x) paste0(x, list.files(x))
+                 ) %>% 
+  unlist()
+
+head(file_name_test)
+```
+
+```{r}
+#Check Contain Randomly select image
+set.seed(123)
+sample_image_test <- sample(file_name_test, 6)
+
+# Load image into R
+img_test <- map(sample_image_test, load.image)
+
+# Plot image
+par(mfrow = c(2, 3)) # Create 2 x 3 image grid
+map(img_test, plot)
+```
+
+
+
+### Check Image Dimension
+
+```{r}
+# Function for acquiring width and height of an image
+get_dim <- function(x){
+  img <- load.image(x) 
+  
+  df_img <- data.frame(height = height(img),
+                       width = width(img),
+                       filename = x
+                       )
+  
+  return(df_img)
+}
+
+set.seed(123)
+sample_file_test <- sample(file_name_test)
+
+# Run the get_dim() function for each image
+file_dim_test <- map_df(sample_file_test, get_dim)
+
+head(file_dim_test, 10)
+```
+
+```{r}
+summary(file_dim_test)
+```
+Points that we can get from above summary test data for prediction :
+
++ Our image data has a great variation in the dimension
++ The minimum height is 100 pixels while the maximum height is 300 pixels
++ The minimum width is 100 pixels while the maximum width is up to 450 pixels
+
+During prediction using data test, we have to make sure that all the images that inserted to the model must have the same dimensions.
+
+
+# Data Pre-Processing
+
+Image Clasiffication data processing is very simple. We can do this data pre-processing in a single step that called Data Augmentation
+
+## Data Train and Validation Image Augmentation 
+
+Image data augmentation is a technique that can be used to artificially expand the size of a training dataset by creating modified versions of images in the dataset.
+
+Training deep learning neural network models on more data can result in more skillful models, and the augmentation techniques can create variations of the images that can improve the ability of the fit models to generalize what they have learned to new images.
+
+The Keras deep learning neural network library provides the capability to fit models using image data augmentation via the ImageDataGenerator class.
+
+Based on our previous summary of the image dimensions, we can determine the input dimension for the deep learning model. All input images should have the same dimensions. Here, we can determine the input size for the image, for example transform all image into 250 x 250 pixels. This process will be similar to us resizing the image. Bigger dimensions will have more features but will also take longer time to train. However, if the image size is too small, we will lose a lot of information from the data. So balancing this trade-off is the art of data preprocessing in image classification.
+
+We also set the batch size for the data so the model will be updated every time it finished training on a single batch. Here, we set the batch size to 32.
+
+```{r}
+# Desired height and width of images
+target_size <- c(125, 125)
+
+# Batch size for training the model
+batch_size <- 32
+```
+
+Since we have a little amount of training set, we will build artificial data using method called Image Augmentation. Image augmentation is one useful technique in building models that can increase the size of the training set without acquiring new images. The goal is that to teach the model not only with the original image but also the modification of the image, such as flipping the image, rotate it, zooming, crop the image, etc. This will create more robust model. We can do data augmentation by using the image data generator from keras.
+
+![](C:\SyabaruddinFolder\Work\Algoritma\DATAScicourse\NeuralNetwork\CapstoneProject\aug.png)
+
+To do image augmentation, we can fit the data into a generator. Here, we will create the image generator for keras with the following properties:
+
++ Scaling the pixel value by dividing the pixel value by 255
++ Flip the image horizontally
++ Flip the image vertically
++ Rotate the image from 0 to 45 degrees
++ Zoom in or zoom out by 25% (zoom 75% or 125%)
++ Use 20% of the data as validation dataset
+
+```{r}
+# Image Generator
+train_data_gen <- image_data_generator(rescale = 1/255, # Scaling pixel value
+                                       horizontal_flip = T, # Flip image horizontally
+                                       vertical_flip = T, # Flip image vertically 
+                                       rotation_range = 45, # Rotate image from 0 to 45 degrees
+                                       zoom_range = 0.25, # Zoom in or zoom out range
+                                       validation_split = 0.2 # 20% data as validation data
+                                       )
+```
+
+Now we can insert our image data into the generator using the flow_images_from_directory(). The data is located inside the data folder and inside the train folder, so the directory will be data/train. From this process, we will get the augmented image both for training data and the validation data.
+
+```{r}
+# Training Dataset
+train_image_array_gen <- flow_images_from_directory(directory = "data/train/", # Folder of the data
+                                                    target_size = target_size, # target of the image dimension (125 x 125)  
+                                                    color_mode = "rgb", # use RGB color
+                                                    batch_size = batch_size , 
+                                                    seed = 123,  # set random seed
+                                                    subset = "training", # declare that this is for training data
+                                                    generator = train_data_gen
+                                                    )
+
+# Validation Dataset
+val_image_array_gen <- flow_images_from_directory(directory = "data/train/",
+                                                  target_size = target_size, 
+                                                  color_mode = "rgb", 
+                                                  batch_size = batch_size ,
+                                                  seed = 123,
+                                                  subset = "validation", # declare that this is the validation data
+                                                  generator = train_data_gen
+                                                  )
+```
+
+Here we will collect some information from the generator and check the class proportion of the train dataset. The index correspond to each labels of the target variable and ordered alphabetically
+
+```{r}
+# Number of training samples
+train_samples <- train_image_array_gen$n
+
+# Number of validation samples
+valid_samples <- val_image_array_gen$n
+
+# Number of target classes/categories
+output_n <- n_distinct(train_image_array_gen$classes)
+
+# Get the class proportion
+table("\nFrequency" = factor(train_image_array_gen$classes)
+      ) %>% 
+  prop.table()
+```
+If we look at above prop table result, our target classes/labels proportion is balance enough. 
+
+Balance target classes is very important for classification task. If the target classes happened to be imbalance, the result of the models will have poor predictive performance, specifically for the minority class. This is a problem because typically, the minority class is more important and therefore the problem is more sensitive to classification errors for the minority class than the majority class.
+
+## Data Test Image Augmentation (For Prediction)
+
+```{r}
+# Image Generator
+test_data_gen <- image_data_generator(rescale = 1/255, # Scaling pixel value
+                                       horizontal_flip = T, # Flip image horizontally
+                                       vertical_flip = T, # Flip image vertically 
+                                       rotation_range = 45, # Rotate image from 0 to 45 degrees
+                                       zoom_range = 0.25, # Zoom in or zoom out range
+                            
+                                       )
+
+test_image_array_gen <- flow_images_from_directory(directory = "data/test/",
+                                                  target_size = target_size, 
+                                                  color_mode = "rgb", 
+                                                  batch_size = batch_size ,
+                                                  seed = 123,
+                                                  generator = test_data_gen
+                                                  )
+```
+
+
+# Modelling
+
+In this section we will build our model using CNN.
+
+## Model Architecture
+
+We can start building the model architecture for the deep learning. We will build a simple model first with the following layer:
+
++ Convolutional layer to extract features from 2D image with relu activation function
++ Max Pooling layer to downsample the image features
++ Flattening layer to flatten data from 2D array to 1D array
++ Dense layer to capture more information
++ Dense layer for output with softmax activation function
+
+Don’t forget to set the input size in the first layer. If the input image is in RGB, set the final number to 3, which is the number of color channels. If the input image is in grayscale, set the final number to 1.
+
+```{r}
+# input shape of the image
+c(target_size, 3) 
+```
+
+```{r}
+# Set Initial Random Weight
+tensorflow::tf$random$set_seed(123)
+
+model <- keras_model_sequential(name = "simple_model") %>% 
+  
+  # Convolution Layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3) 
+                ) %>% 
+
+  # Max Pooling Layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Flattening Layer
+  layer_flatten() %>% 
+  
+  # Dense Layer
+  layer_dense(units = 32,
+              activation = "relu") %>% 
+  
+  # Output Layer
+  layer_dense(units = output_n,
+              activation = "softmax",
+              name = "Output")
+  
+model
+```
+As we can see, we start by entering image data with 125 x 125 pixels into the convolutional layer, which has 32 filters to extract featuers from the image. The padding = same argument is used to keep the dimension of the feature to be 125 x 125 pixels after being extracted. We then downsample or only take the maximum value for each 2x2 pooling area so the data now only has 62 x 62 pixels with from 16 filters. After that, from 32 x 32 pixels we flatten the 2D array into a 1D array with 62 x 62 x 32 = 3936288 nodes. We can further extract information using the simple dense layer and finished by flowing the information into the output layer, which will be transformed using the softmax activation function to get the probability of each class as the output.
+
+## Model Fitting
+
+We can start fitting the data into the model. For starter, we will use 30 epochs to train the data. For multilabel classification, we will use categorical cross-entropy as the loss function. For this example, we use sgd optimizer with learning rate of 0.001. We will also evaluate the model with the validation data from the generator.
+
+```{r}
+model %>% 
+  compile(
+    loss = "categorical_crossentropy",
+    optimizer = optimizer_sgd(lr = 0.001),
+    metrics = "accuracy"
+  )
+
+# Fit data into model
+history <- model %>% 
+  fit_generator(
+#  training data
+  train_image_array_gen,
+
+  # training epochspp
+  steps_per_epoch = as.integer(train_samples / batch_size), 
+  epochs = 30, 
+  
+  # validation data
+  validation_data = val_image_array_gen,
+  validation_steps = as.integer(valid_samples / batch_size)
+)
+
+plot(history)
+```
+# Model Evaluation
+
+Let's evaluate further the model using confusion matrix.First, we need to acquire the file name of the image that is used as the data validation. From the file name, we will extract the categorical label as the actual value of the target variable.
+
+```{r}
+val_data <- data.frame(file_name = paste0("data/train/", val_image_array_gen$filenames)) %>% 
+  mutate(class = str_extract(file_name, "beach|forest|mountain"))
+
+head(val_data, 10)
+```
+
+We need to get the image into R by converting the image into an array. Since our input dimension for CNN model is image with 125 x 125 pixels with 3 color channels (RGB), we will do the same with the image of the testing data. The reason of using array is that we want to predict the original image fresh from the folder so we will not use the image generator since it will transform the image and does not reflect the actual image.
+
+```{r}
+# Function to convert image to array
+image_prep <- function(x) {
+  arrays <- lapply(x, function(path) {
+    img <- image_load(path, target_size = target_size, 
+                      grayscale = F # Set FALSE if image is RGB
+                      )
+    
+    x <- image_to_array(img)
+    x <- array_reshape(x, c(1, dim(x)))
+    x <- x/255 # rescale image pixel
+  })
+  do.call(abind::abind, c(arrays, list(along = 1)))
+}
+```
+
+```{r}
+test_x <- image_prep(val_data$file_name)
+
+# Check dimension of testing data set
+dim(test_x)
+```
+The validation data consists of 264 images with dimensions of 125 x 125 pixels and 3 color channels (RGB). After we have prepared the data test, we now can proceed to predict the label of each image using our CNN model.
+
+```{r}
+pred_test <- predict_classes(model, test_x) 
+
+pred_test
+```
+To get easier interpretation of the prediction, we will convert the encoding into proper class label.
+
+```{r}
+# Convert encoding to label
+decode <- function(x){
+  case_when(x == 0 ~ "beach",
+            x == 1 ~ "forest",
+            x == 2 ~ "mountain"
+            )
+}
+
+pred_test <- sapply(pred_test, decode) 
+
+pred_test
+```
+Now let's evaluate using confusion matrix to check the accuracy and other metrics
+
+```{r}
+confusionMatrix(as.factor(pred_test), 
+                as.factor(val_data$class)
+                )
+```
+
+If we look at result above, we got a pretty good accuracy with 75.38% accuracy. We found also that there are not really good results with another metrics. Some are good, but some are low.
+
+Since our target is accuracy,sensitivity, specifity and precision  > 75%, we need to improve the model to get better accuracy and another metrics.
+
+The model is in good fit, not overfit since the accuracy both using train data and test data is having almost the same result.
+
+Now let us check if we can improve the accuracy or another metrics with model tuning
+
+## Model Tuning
+
+### Model Architecture
+
+let's check once again our model. We can actually extract more information while the data is still in an 2D image array. The first CNN only extract the general features of our image and then being downsampled using the max pooling layer. Even after pooling, we still have 62 x 62 array that has a lot of information to extract before flattening the data. Therefore, we can stacks more CNN layers into the model so there will be more information to be captured. We can also put 2 CNN layers consecutively before doing max pooling.
+
+```{r}
+model
+```
+The following is our improved model architecture:
+
++ 1st Convolutional layer to extract features from 2D image with relu activation function
++ 2nd Convolutional layer to extract features from 2D image with relu activation function
++ Max pooling layer
++ Flattening layer from 2D array to 1D array
++ Dense layer to capture more information
++ Dense layer for output layer
+
+```{r}
+# Set Initial Random Weight
+tensorflow::tf$random$set_seed(123)
+
+model_tuned <- keras_model_sequential(name = "model_tuned") %>% 
+  
+  # Convolution Layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3) 
+                ) %>% 
+  # Convolution Layer
+  layer_conv_2d(filters = 32,
+                kernel_size = c(3,3),
+                padding = "same",
+                activation = "relu",
+                input_shape = c(target_size, 3) 
+                ) %>% 
+  
+  # Max Pooling Layer
+  layer_max_pooling_2d(pool_size = c(2,2)) %>% 
+  
+  # Flattening Layer
+  layer_flatten() %>% 
+  
+  # Dense Layer
+  layer_dense(units = 16,
+              activation = "relu") %>% 
+  
+  # Output Layer
+  layer_dense(units = output_n,
+              activation = "softmax",
+              name = "Output")
+  
+model_tuned
+```
+### Model Fitting
+
+Now lets fit the tuned model. Now we are going to use Adam Optimizer with lr 0.001
+
+```{r}
+model_tuned %>% 
+  compile(
+    loss = "categorical_crossentropy",
+    optimizer = optimizer_adam(lr = 0.001),
+    metrics = "accuracy"
+  )
+
+# Fit data into model
+history <- model_tuned %>% 
+  fit_generator(
+#  training data
+  train_image_array_gen,
+
+  # training epoch
+  steps_per_epoch = as.integer(train_samples / batch_size), 
+  epochs = 30, 
+  
+  # validation data
+  validation_data = val_image_array_gen,
+  validation_steps = as.integer(valid_samples / batch_size)
+)
+
+plot(history)
+```
+
+### Model Evaluation
+
+Let's evaluate our model using Confusion Matrix
+
+```{r}
+pred_test <- predict_classes(model_tuned, test_x) 
+
+pred_test
+```
+To get easier interpretation of the prediction, we will convert the encoding into proper class label.
+
+```{r}
+# Convert encoding to label
+decode <- function(x){
+  case_when(x == 0 ~ "beach",
+            x == 1 ~ "forest",
+            x == 2 ~ "mountain"
+            )
+}
+
+pred_test <- sapply(pred_test, decode) 
+
+pred_test
+```
+
+```{r}
+confusionMatrix(as.factor(pred_test), 
+                as.factor(val_data$class)
+                )
+```
+If we look at result above, we increase the accuracy from 75,38% to 84,85%. We also has a very good sensitivity/recall, specificity, and precision value for each  classes, with all values > 75%. 
+
+The model is also in good fit because the accuracy between data test and data train is almost the same.
+
+# Prediction
+
+After we have trained the tuned-model and satisfied with the model performance on the validation dataset, we will do prediction/classification using new data test
+
+
+```{r}
+test_data <- data.frame(file_name = paste0("data/test/", test_image_array_gen$filenames)) %>% 
+  mutate(class = str_extract(file_name, "beach|forest|mountain")) 
+
+head(test_data, 10)
+```
+
+```{r}
+test1 <- image_prep(test_data$file_name)
+
+# Check dimension of testing data set
+dim(test1)
+```
+The testing data consists of 294 images with dimension of 125 x 125 pixels and 3 color channels (RGB). After we have prepared the data test, we now can proceed to predict the label of each image using our CNN model.
+
+```{r}
+pred_test1 <- predict_classes(model_tuned, test1) 
+
+head(pred_test1, 10)
+```
+To get easier interpretation of the prediction, we will convert the encoding into proper class label.
+
+
+```{r}
+# Convert encoding to label
+decode <- function(x){
+  case_when(x == 0 ~ "beach",
+            x == 1 ~ "forest",
+            x == 2 ~ "mountain"
+            )
+}
+
+pred_test2 <- sapply(pred_test1, decode) 
+
+pred_test2
+```
+```{r}
+submission <- read.csv("data/submission-example.csv")
+submission$label <- pred_test2
+head(submission)
+```
+
+
+
